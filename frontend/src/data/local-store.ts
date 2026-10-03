@@ -8,8 +8,12 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function readStorage(): Record<string, EntryRow[]> {
-  const fallback = clone(SEED_ROWS)
+// 全部业务数据（含验收台账等扩展域）都在同一个存储 key 下，
+// 这样一次 setItem 就是一次事务：要么全写进去，要么一个字都不动。
+type EntriesMap = Record<string, unknown>
+
+function readStorage(): EntriesMap {
+  const fallback: EntriesMap = clone(SEED_ROWS)
   if (typeof window === 'undefined' || !window.localStorage) {
     return fallback
   }
@@ -19,7 +23,7 @@ function readStorage(): Record<string, EntryRow[]> {
     return fallback
   }
   try {
-    const parsed = JSON.parse(raw) as Record<string, EntryRow[]>
+    const parsed = JSON.parse(raw) as EntriesMap
     return { ...fallback, ...parsed }
   } catch {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fallback))
@@ -27,25 +31,47 @@ function readStorage(): Record<string, EntryRow[]> {
   }
 }
 
-let cache: Record<string, EntryRow[]> | null = null
+let cache: EntriesMap | null = null
 
 export function allRows(): Record<string, EntryRow[]> {
+  return allState() as Record<string, EntryRow[]>
+}
+
+// 只读访问完整存储（含验收域），不会把临时结构写回缓存。
+export function readState(): EntriesMap {
   if (cache === null) {
     cache = readStorage()
   }
   return cache
 }
 
+function allState(): EntriesMap {
+  return readState()
+}
+
+function persist(state: EntriesMap): void {
+  cache = state
+  if (typeof window !== 'undefined' && window.localStorage) {
+    // 单次写入即提交：浏览器在本次同步赋值里不会读到中间态。
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  }
+}
+
 export function listRows(key: string): EntryRow[] {
-  return allRows()[key] ?? []
+  return (allRows()[key] ?? []) as EntryRow[]
 }
 
 export function saveRows(key: string, rows: EntryRow[]): void {
-  const next = { ...allRows(), [key]: rows }
-  cache = next
-  if (typeof window !== 'undefined' && window.localStorage) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-  }
+  persist({ ...allState(), [key]: rows })
+}
+
+// 批量事务：在同一份草稿上依次改动，最后一次性落库。
+// mutate 抛错时缓存和 localStorage 都保持上一个已提交版本。
+export function mutateState(mutate: (draft: EntriesMap) => void): EntriesMap {
+  const draft = clone(allState())
+  mutate(draft)
+  persist(draft)
+  return draft
 }
 
 export function resetRows(key: string): EntryRow[] {

@@ -6,7 +6,8 @@
         <p class="page-desc">维护防火林带，围绕林带编号、林带名称、所属林区、树种组成做登记、筛选与状态流转。</p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记防火林带</button>
+        <RouterLink class="btn primary" to="/firebelt/acceptance">批量验收</RouterLink>
+        <button class="btn" type="button" @click="openCreate">登记防火林带</button>
         <button class="btn" type="button" @click="exportRows">导出防火林带清单</button>
       </div>
     </header>
